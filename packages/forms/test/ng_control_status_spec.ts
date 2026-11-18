@@ -6,7 +6,12 @@
  * found in the LICENSE file at https://angular.dev/license
  */
 
-import {ChangeDetectionStrategy, Component, provideZonelessChangeDetection} from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  provideClassMerge,
+  provideZonelessChangeDetection,
+} from '@angular/core';
 import {FormControl, FormsModule, ReactiveFormsModule, Validators} from '../public_api';
 import {TestBed} from '@angular/core/testing';
 
@@ -43,5 +48,28 @@ describe('status host binding classes', () => {
     fixture.componentInstance.control.reset();
     await fixture.whenStable();
     expect(fixture.nativeElement.innerHTML).toContain('ng-untouched');
+  });
+
+  it('work with provideClassMerge', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideClassMerge((classes) => classes.join(' '))],
+    });
+    @Component({
+      selector: 'test-cmp',
+      template: `<input type="text" class="field" [formControl]="control" />`,
+      imports: [ReactiveFormsModule],
+    })
+    class App {
+      control = new FormControl('', [Validators.required]);
+    }
+
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    expect(input.className).toBe('ng-untouched ng-pristine ng-invalid field');
+
+    fixture.componentInstance.control.setValue('value');
+    await fixture.whenStable();
+    expect(input.className).toBe('ng-untouched ng-pristine ng-valid field');
   });
 });

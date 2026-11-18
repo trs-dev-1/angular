@@ -257,8 +257,8 @@ export function injectRenderer2(): Renderer2 {
   const nodeAtIndex = getComponentLViewByIndex(tNode.index, lView);
   const renderer = (isLView(nodeAtIndex) ? nodeAtIndex : lView)[RENDERER] as Renderer2;
   // With `provideClassMerge`, classes added through the renderer take part in the merge.
-  const classMerge = lView[ENVIRONMENT].classMerge;
-  return classMerge ? classMerge.wrapRenderer(renderer) : renderer;
+  const classMerger = lView[ENVIRONMENT].classMerger;
+  return classMerger !== null ? classMerger.wrapRenderer(renderer) : renderer;
 }
 
 /**

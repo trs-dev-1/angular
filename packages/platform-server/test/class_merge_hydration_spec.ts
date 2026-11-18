@@ -14,9 +14,11 @@ import {
   destroyPlatform,
   ElementRef,
   inject,
+  InjectionToken,
+  Input,
+  PendingTasks,
   PLATFORM_ID,
   provideClassMerge,
-  Provider,
   Renderer2,
   signal,
 } from '@angular/core';
@@ -49,10 +51,13 @@ function lastWins(classes: string[]): string {
   return Array.from(byGroup.values()).join(' ');
 }
 
-const mergeProviders = [provideClassMerge(lastWins)] as unknown as Provider[];
+const mergeProviders = [provideClassMerge(lastWins)];
 
 @Directive({selector: '[variant]', host: {class: 'g1-variant g3-variant'}})
 class Variant {}
+
+/** The size class of `Chip`, `g2-md` unless provided (e.g. differently on the client). */
+const CHIP_SIZE = new InjectionToken<string>('CHIP_SIZE', {factory: () => 'g2-md'});
 
 @Component({
   selector: 'chip',
@@ -60,7 +65,7 @@ class Variant {}
   host: {'class': 'g1-chip g2-chip', '[class]': 'size()'},
 })
 class Chip {
-  size = signal('g2-md');
+  size = signal(inject(CHIP_SIZE));
 }
 
 describe('class merge with SSR and hydration', () => {
@@ -162,8 +167,8 @@ describe('class merge with SSR and hydration', () => {
 
     @Component({
       selector: 'app',
-      imports: [Chip, ActiveLink],
-      template: `<chip activeLink [class.g1-on]="on()" />`,
+      imports: [Variant, ActiveLink],
+      template: `<a variant activeLink class="g2-link" [class.g1-on]="on()"></a>`,
     })
     class App {
       on = signal(true);
@@ -179,8 +184,8 @@ describe('class merge with SSR and hydration', () => {
     appRef.tick();
 
     const compRef = getComponentRef<App>(appRef);
-    const chip = (compRef.location.nativeElement as HTMLElement).querySelector('chip')!;
-    const classes = () => chip.className.split(' ');
+    const link = (compRef.location.nativeElement as HTMLElement).querySelector('a')!;
+    const classes = () => link.className.split(' ');
     // Not dropped while the client has not re-applied it yet (no flicker).
     expect(classes()).toContain('active');
     expect(classes()).toContain('g1-on');
@@ -189,6 +194,113 @@ describe('class merge with SSR and hydration', () => {
     appRef.tick();
     expect(classes()).toContain('active');
     expect(classes()).not.toContain('g1-on');
+  });
+
+  it('should drop server classes of a [class] binding that the client no longer produces', async () => {
+    @Component({selector: 'app', imports: [Chip], template: `<chip />`})
+    class App {}
+
+    const html = await ssr(App, {envProviders: mergeProviders});
+    expect(getAppContents(html)).toContain('g2-md');
+
+    resetTViewsFor(App);
+    const appRef = await prepareEnvironmentAndHydrate(doc, html, App, {
+      envProviders: [...mergeProviders, {provide: CHIP_SIZE, useValue: 'g2-lg'}],
+    });
+    appRef.tick();
+
+    const chip = (getComponentRef<App>(appRef).location.nativeElement as HTMLElement).querySelector(
+      'chip',
+    )!;
+    await appRef.whenStable();
+    expect(chip.className).toBe(lastWins(['g1-chip', 'g2-chip', 'g2-lg']));
+  });
+
+  it('should keep a server class of an element with a [class] binding until it is added again', async () => {
+    /** Like `RouterLinkActive`: on the client, adds its class again once the navigation is done. */
+    @Directive({selector: '[activeLink]'})
+    class ActiveLink {
+      private renderer = inject(Renderer2);
+      private element = inject(ElementRef).nativeElement as HTMLElement;
+      /** Whether the link is still active on the client. */
+      @Input() activeLink = '';
+      constructor() {
+        if (isPlatformServer(inject(PLATFORM_ID))) {
+          this.activate();
+          return;
+        }
+        // The pending navigation keeps the application unstable.
+        const removeTask = inject(PendingTasks).add();
+        setTimeout(() => {
+          if (this.activeLink === 'still') {
+            this.activate();
+          }
+          removeTask();
+        });
+      }
+      private activate() {
+        this.renderer.addClass(this.element, 'g1-active');
+      }
+    }
+
+    @Component({
+      selector: 'app',
+      imports: [Chip, ActiveLink],
+      template: `<chip activeLink="still" [class.g3-on]="true" /><chip activeLink="not" />`,
+    })
+    class App {}
+
+    const html = await ssr(App, {envProviders: mergeProviders});
+    resetTViewsFor(App);
+    const appRef = await prepareEnvironmentAndHydrate(doc, html, App, {
+      envProviders: mergeProviders,
+    });
+    appRef.tick();
+
+    const root = getComponentRef<App>(appRef).location.nativeElement as HTMLElement;
+    const [still, not] = Array.from(root.querySelectorAll('chip'));
+    // No flicker: the server class stays while the navigation is pending.
+    expect(still.className).toBe(`${lastWins(['g1-chip', 'g2-chip', 'g2-md', 'g3-on'])} g1-active`);
+    expect(not.className).toBe(`${lastWins(['g1-chip', 'g2-chip', 'g2-md'])} g1-active`);
+
+    await appRef.whenStable();
+    expect(still.className).toBe(lastWins(['g1-chip', 'g2-chip', 'g2-md', 'g3-on', 'g1-active']));
+    expect(not.className).toBe(lastWins(['g1-chip', 'g2-chip', 'g2-md']));
+  });
+
+  it('should merge the classes of an element that skips hydration', async () => {
+    @Component({
+      selector: 'app',
+      imports: [Chip, Variant],
+      template: `<chip ngSkipHydration variant class="g3-consumer" [class.g1-active]="active()" />`,
+    })
+    class App {
+      active = signal(true);
+    }
+
+    const html = await ssr(App, {envProviders: mergeProviders});
+    resetTViewsFor(App);
+    const appRef = await prepareEnvironmentAndHydrate(doc, html, App, {
+      envProviders: mergeProviders,
+    });
+    appRef.tick();
+
+    const compRef = getComponentRef<App>(appRef);
+    const chip = (compRef.location.nativeElement as HTMLElement).querySelector('chip')!;
+    const expected = (active: boolean) =>
+      lastWins([
+        'g1-chip',
+        'g2-chip',
+        'g2-md',
+        'g1-variant',
+        'g3-variant',
+        'g3-consumer',
+        ...(active ? ['g1-active'] : []),
+      ]);
+    expect(chip.className).toBe(expected(true));
+    compRef.instance.active.set(false);
+    appRef.tick();
+    expect(chip.className).toBe(expected(false));
   });
 
   describe('incremental hydration', () => {

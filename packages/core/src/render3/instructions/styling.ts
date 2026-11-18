@@ -253,6 +253,7 @@ export function checkStylingMap(
     // `getSelectedIndex()` should be here (rather than in instruction) so that it is guarded by the
     // if so as not to read unnecessarily.
     const tNode = tView.data[getSelectedIndex()] as TNode;
+    const classMerger = isClassBased ? lView[ENVIRONMENT].classMerger : null;
     if (hasStylingInputShadow(tNode, isClassBased) && !isInHostBindings(tView, bindingIndex)) {
       if (ngDevMode) {
         // verify that if we are shadowing then `TData` is appropriately marked so that we skip
@@ -283,6 +284,12 @@ export function checkStylingMap(
       // Given `<div [style] my-dir>` such that `my-dir` has `@Input('style')`.
       // This takes over the `[style]` binding. (Same for `[class]`)
       setDirectiveInputsWhichShadowsStyling(tView, tNode, lView, value, isClassBased);
+    } else if (classMerger !== null) {
+      // The merger reads the value as bound (`lView[bindingIndex]`), so no `KeyValueArray` is needed.
+      if (tNode.type & TNodeType.AnyRNode) {
+        const element = getNativeByIndex(getSelectedIndex(), lView) as RElement;
+        classMerger.writeClasses(tView, tNode, lView, element);
+      }
     } else {
       updateStylingMap(
         tView,
@@ -775,15 +782,6 @@ function updateStylingMap(
   isClassBased: boolean,
   bindingIndex: number,
 ) {
-  const classMerge = isClassBased ? lView[ENVIRONMENT].classMerge : null;
-  if (classMerge) {
-    // Merging rewrites all classes of the element, so do it once per binding rather than per key.
-    if (tNode.type & TNodeType.AnyRNode) {
-      const rNode = getNativeByIndex(getSelectedIndex(), lView) as RElement;
-      classMerge.writeMergedClasses(tView, tNode, lView, renderer, rNode);
-    }
-    return;
-  }
   if ((oldKeyValueArray as KeyValueArray<any> | NO_CHANGE) === NO_CHANGE) {
     // On first execution the oldKeyValueArray is NO_CHANGE => treat it as empty KeyValueArray.
     oldKeyValueArray = EMPTY_ARRAY as any;
@@ -866,10 +864,11 @@ function updateStyling(
     return;
   }
   const tData = tView.data;
-  const classMerge = isClassBased ? lView[ENVIRONMENT].classMerge : null;
-  if (classMerge) {
-    const rNode = getNativeByIndex(getSelectedIndex(), lView) as RElement;
-    classMerge.writeMergedClasses(tView, tNode, lView, renderer, rNode);
+  const classMerger = isClassBased ? lView[ENVIRONMENT].classMerger : null;
+  if (classMerger !== null) {
+    // A changed class binding rewrites all classes of the element, merged.
+    const element = getNativeByIndex(getSelectedIndex(), lView) as RElement;
+    classMerger.writeClasses(tView, tNode, lView, element);
     return;
   }
   const tRange = tData[bindingIndex + 1] as TStylingRange;

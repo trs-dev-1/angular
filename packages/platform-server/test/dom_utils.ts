@@ -9,6 +9,7 @@
 import {DOCUMENT} from '@angular/common';
 import {
   ApplicationRef,
+  EnvironmentProviders,
   PLATFORM_ID,
   Provider,
   Type,
@@ -95,7 +96,7 @@ export function hydrate(
   doc: Document,
   component: Type<unknown>,
   options: {
-    envProviders?: Provider[];
+    envProviders?: Array<Provider | EnvironmentProviders>;
     hydrationFeatures?: () => HydrationFeature<HydrationFeatureKind>[];
   } = {},
 ) {
@@ -165,7 +166,7 @@ export async function prepareEnvironmentAndHydrate(
   html: string,
   component: Type<unknown>,
   options?: {
-    envProviders?: Provider[];
+    envProviders?: Array<Provider | EnvironmentProviders>;
     hydrationFeatures?: () => HydrationFeature<HydrationFeatureKind>[];
   },
 ): Promise<ApplicationRef> {

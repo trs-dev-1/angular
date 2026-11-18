@@ -80,6 +80,8 @@ export const enum RuntimeErrorCode {
     // (undocumented)
     INVALID_BINDING_TARGET = 316,
     // (undocumented)
+    INVALID_CLASS_MERGE_RESULT = 960,
+    // (undocumented)
     INVALID_DIFFER_INPUT = 900,
     // (undocumented)
     INVALID_EVENT_BINDING = 306,

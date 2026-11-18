@@ -138,22 +138,28 @@ function writeDirectClass(renderer: Renderer, element: RElement, newValue: strin
   }
 }
 
-/** Sets up the static DOM attributes on an `RNode`. */
+/**
+ * Sets up the static DOM attributes on an `RNode`.
+ *
+ * @param isNewElement Whether the element was just created, rather than hydrated or selected as a
+ *     root component's host (which may carry classes already).
+ */
 export function setupStaticAttributes(
   renderer: Renderer,
   element: RElement,
   tNode: TNode,
-  lView?: LView,
+  lView: LView,
+  isNewElement: boolean,
 ) {
   const {mergedAttrs, classes, styles} = tNode;
-  const classMerge = lView?.[ENVIRONMENT].classMerge;
+  const classMerger = lView[ENVIRONMENT].classMerger;
 
   if (mergedAttrs !== null) {
     setUpAttributes(renderer, element, mergedAttrs);
   }
 
-  if (classMerge) {
-    classMerge.writeStaticClasses(lView!, tNode, renderer, element);
+  if (classMerger !== null) {
+    classMerger.writeStaticClasses(lView, tNode, element, isNewElement);
   } else if (classes !== null) {
     writeDirectClass(renderer, element, classes);
   }

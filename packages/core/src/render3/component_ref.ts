@@ -82,7 +82,7 @@ import {ViewRef} from './view_ref';
 import {createLView, createTView, getInitialLViewFlagsFromDef} from './view/construction';
 import {BINDING, Binding, BindingInternal, DirectiveWithBindings} from './dynamic_bindings';
 import {NG_REFLECT_ATTRS_FLAG, NG_REFLECT_ATTRS_FLAG_DEFAULT} from '../ng_reflect';
-import {CLASS_MERGE} from '../class_merge';
+import {CLASS_MERGE} from './styling/class_merge';
 import {TracingService} from '../application/tracing';
 import {getComponentName} from '../internal/get_closest_component_name';
 
@@ -173,7 +173,7 @@ function createRootLViewEnvironment(rootLViewInjector: Injector): LViewEnvironme
   const sanitizer = rootLViewInjector.get(Sanitizer, null);
   const changeDetectionScheduler = rootLViewInjector.get(ChangeDetectionScheduler, null);
   const tracingService = rootLViewInjector.get(TracingService, null, {optional: true});
-  const classMerge = rootLViewInjector.get(CLASS_MERGE, null, {optional: true});
+  const classMerger = rootLViewInjector.get(CLASS_MERGE, null);
 
   let ngReflect = false;
   if (typeof ngDevMode === 'undefined' || ngDevMode) {
@@ -185,7 +185,7 @@ function createRootLViewEnvironment(rootLViewInjector: Injector): LViewEnvironme
     sanitizer,
     changeDetectionScheduler,
     ngReflect,
-    classMerge,
+    classMerger,
     tracingService,
   };
 }
@@ -362,7 +362,7 @@ export class ComponentFactory<T> extends AbstractComponentFactory<T> {
       );
 
       // ---- element instruction
-      setupStaticAttributes(hostRenderer, hostElement, hostTNode, rootLView);
+      setupStaticAttributes(hostRenderer, hostElement, hostTNode, rootLView, false);
       attachPatchData(hostElement, rootLView);
 
       // TODO(pk): this logic is similar to the instruction code where a node can have directives

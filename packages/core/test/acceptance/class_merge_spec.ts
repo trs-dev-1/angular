@@ -18,15 +18,23 @@ import {
   ErrorHandler,
   inject,
   Input,
+  inputBinding,
+  NgModule,
   provideClassMerge,
+  provideZonelessChangeDetection,
   Renderer2,
   signal,
   Type,
   ViewContainerRef,
+  ViewEncapsulation,
   WritableSignal,
 } from '../../src/core';
 import {getDirectives} from '../../src/render3/util/discovery_utils';
-import {TestBed} from '../../testing';
+import {fakeAsync, flush, TestBed} from '../../testing';
+import {NoopAnimationsModule} from '@angular/platform-browser/animations';
+import {BrowserTestingModule, platformBrowserTesting} from '@angular/platform-browser/testing';
+import {isNode} from '@angular/private/testing';
+import {tickAnimationFrames} from '../animation_utils/tick_animation_frames';
 
 type ClassMapValue = string | string[] | Record<string, boolean> | null | undefined;
 
@@ -197,17 +205,31 @@ function randomPropValue(next: () => number): boolean | undefined {
   return [undefined, true, false][Math.floor(next() * 3)];
 }
 
+/** Destroys the components and environments created by a spec. */
+const cleanups: (() => void)[] = [];
+
+/** Creates an environment that provides the given merge function. */
+function createMergeEnvironment(
+  merge: ((classes: string[]) => string) | null,
+  extraProviders: unknown[] = [],
+): EnvironmentInjector {
+  const environmentInjector = createEnvironmentInjector(
+    [merge ? provideClassMerge(merge) : [], ...(extraProviders as [])],
+    TestBed.inject(EnvironmentInjector),
+  );
+  cleanups.push(() => environmentInjector.destroy());
+  return environmentInjector;
+}
+
 /** Creates a root component in an environment that provides the given merge function. */
 function createWithMerge<T>(
   type: Type<T>,
   merge: ((classes: string[]) => string) | null,
   extraProviders: unknown[] = [],
 ): ComponentRef<T> {
-  const environmentInjector = createEnvironmentInjector(
-    [merge ? provideClassMerge(merge) : [], ...(extraProviders as [])],
-    TestBed.inject(EnvironmentInjector),
-  );
+  const environmentInjector = createMergeEnvironment(merge, extraProviders);
   const ref = createComponent(type, {environmentInjector});
+  cleanups.push(() => ref.destroy());
   ref.changeDetectorRef.detectChanges();
   return ref;
 }
@@ -218,6 +240,11 @@ function hostOf(ref: ComponentRef<unknown>, selector: string): HTMLElement {
 
 describe('class merge', () => {
   beforeEach(() => resetSources());
+  afterEach(() => {
+    for (const cleanup of cleanups.splice(0).reverse()) {
+      cleanup();
+    }
+  });
 
   describe('randomized updates over every class source', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
@@ -280,6 +307,35 @@ describe('class merge', () => {
       expect(hostOf(ref, 'div').className).toBe('g1-variant g2-x');
     });
 
+    it('should order [class.name] bindings of one source by template position, above [class]', () => {
+      @Component({
+        template: `<div
+          [class.g1-yellow]="yellow()"
+          [class]="'g1-red'"
+          [class.g1-blue]="blue()"
+        ></div>`,
+      })
+      class Cmp {
+        yellow = signal(false);
+        blue = signal(false);
+      }
+      const ref = createWithMerge(Cmp, lastWins);
+      const element = hostOf(ref, 'div');
+      const update = (yellow: boolean, blue: boolean) => {
+        ref.instance.yellow.set(yellow);
+        ref.instance.blue.set(blue);
+        ref.changeDetectorRef.detectChanges();
+        return element.className;
+      };
+      expect(element.className).toBe('g1-red');
+      expect(update(true, false)).toBe('g1-yellow');
+      expect(update(false, true)).toBe('g1-blue');
+      // Blue is written after yellow, so it wins even when yellow is switched on last.
+      expect(update(true, true)).toBe('g1-blue');
+      expect(update(true, false)).toBe('g1-yellow');
+      expect(update(false, false)).toBe('g1-red');
+    });
+
     it('should keep the order of the static classes of several sources', () => {
       @Directive({selector: '[warn]', host: {class: 'g1-warn'}})
       class Warn {}
@@ -298,6 +354,22 @@ describe('class merge', () => {
       class Cmp {}
       const ref = createWithMerge(Cmp, lastWins);
       expect(hostOf(ref, 'badge').className).toBe('g2-size g1-consumer');
+    });
+
+    it('should order the directives of createComponent after the component', () => {
+      @Directive({selector: '[warn]', host: {'class': 'g1-warn', '[class]': 'map'}})
+      class Warn {
+        @Input() map = '';
+      }
+      @Component({selector: 'chip', template: '', host: {class: 'g1-chip g2-chip'}})
+      class Chip {}
+      const ref = createComponent(Chip, {
+        environmentInjector: createMergeEnvironment(lastWins),
+        directives: [{type: Warn, bindings: [inputBinding('map', () => 'g2-warn')]}],
+      });
+      cleanups.push(() => ref.destroy());
+      ref.changeDetectorRef.detectChanges();
+      expect(ref.location.nativeElement.className).toBe('g1-warn g2-warn');
     });
 
     it('should leave elements whose classes come only from their own class attribute', () => {
@@ -361,6 +433,88 @@ describe('class merge', () => {
       const ref = createWithMerge(Cmp, lastWins);
       expect(hostOf(ref, 'span').className).toBe('g1-b');
     });
+
+    it('should merge the classes of elements inside an i18n block', () => {
+      @Directive({selector: '[dir]', host: {class: 'g1-dir'}})
+      class Dir {}
+      @Component({
+        imports: [Dir],
+        template: `<div i18n>Hello <span dir class="g2-a" [class.g1-on]="on()">world</span></div>`,
+      })
+      class Cmp {
+        on = signal(false);
+      }
+      const ref = createWithMerge(Cmp, lastWins);
+      const span = hostOf(ref, 'span');
+      expect(span.className).toBe('g1-dir g2-a');
+      ref.instance.on.set(true);
+      ref.changeDetectorRef.detectChanges();
+      expect(span.className).toBe('g2-a g1-on');
+    });
+
+    // Enter animations need CSS animations, which only run in a browser.
+    if (!isNode) {
+      describe('with animations', () => {
+        // As in `animation_spec.ts`: `NoopAnimationsModule` turns enter animations off.
+        @NgModule({providers: [provideZonelessChangeDetection()]})
+        class TestModule {}
+        beforeEach(() => {
+          TestBed.resetTestEnvironment();
+          TestBed.initTestEnvironment([BrowserTestingModule, TestModule], platformBrowserTesting());
+        });
+        afterEach(() => {
+          TestBed.resetTestEnvironment();
+          TestBed.initTestEnvironment(
+            [BrowserTestingModule, NoopAnimationsModule, TestModule],
+            platformBrowserTesting(),
+          );
+        });
+
+        it('should keep the classes of an enter animation', fakeAsync(() => {
+          TestBed.configureTestingModule({
+            animationsEnabled: true,
+            providers: [provideClassMerge(lastWins)],
+          });
+          @Component({
+            styles: `
+              .entering {
+                animation: entering 10ms;
+              }
+              @keyframes entering {
+                from {
+                  opacity: 0;
+                }
+                to {
+                  opacity: 1;
+                }
+              }
+            `,
+            encapsulation: ViewEncapsulation.None,
+            template: `
+              @if (show()) {
+                <div class="g1-a" [class.g2-on]="on()" animate.enter="entering"></div>
+              }
+            `,
+          })
+          class Cmp {
+            show = signal(false);
+            on = signal(false);
+          }
+          const fixture = TestBed.createComponent(Cmp);
+          fixture.detectChanges();
+          fixture.componentInstance.show.set(true);
+          fixture.detectChanges();
+          tickAnimationFrames(1);
+          const div = fixture.nativeElement.querySelector('div') as HTMLElement;
+          expect(sorted(div.className)).toBe('entering g1-a');
+          // The enter classes are added outside of class bindings, so a class write keeps them.
+          fixture.componentInstance.on.set(true);
+          fixture.detectChanges();
+          expect(sorted(div.className)).toBe('entering g1-a g2-on');
+          flush();
+        }));
+      });
+    }
   });
 
   describe('dynamic views', () => {
@@ -547,6 +701,68 @@ describe('class merge', () => {
       expect(div.className).toBe('g1-a g1-b');
     });
 
+    it('should add and remove a static class with NgClass like without merging', () => {
+      @Component({
+        imports: [NgClass],
+        template: `<div class="foo g1-a" [ngClass]="{foo: on()}"></div>`,
+      })
+      class Cmp {
+        on = signal(false);
+      }
+      const ref = createWithMerge(Cmp, lastWins);
+      const element = hostOf(ref, 'div');
+      const update = (on: boolean) => {
+        ref.instance.on.set(on);
+        ref.changeDetectorRef.detectChanges();
+        return sorted(element.className);
+      };
+      expect(sorted(element.className)).toBe('g1-a');
+      expect(update(true)).toBe('foo g1-a');
+      expect(update(false)).toBe('g1-a');
+      expect(update(true)).toBe('foo g1-a');
+    });
+
+    it('should merge a class added to an element without classes', () => {
+      @Component({selector: 'plain', template: ''})
+      class Plain {}
+      @Component({imports: [Plain, ActiveClass], template: `<plain activeClass="g1-active" />`})
+      class Cmp {}
+      const ref = createWithMerge(Cmp, lastWins);
+      const element = hostOf(ref, 'plain');
+      getActiveClass(ref).toggle(true);
+      expect(element.className).toBe('g1-active');
+      getActiveClass(ref).toggle(false);
+      expect(element.className).toBe('');
+    });
+
+    it('should leave elements of destroyed views to the renderer', () => {
+      @Component({
+        imports: [ActiveClass],
+        template: `<a class="g1-primary" activeClass="g1-b"></a>`,
+      })
+      class Cmp {}
+      const ref = createWithMerge(Cmp, lastWins);
+      const element = hostOf(ref, 'a');
+      const activeClass = getActiveClass(ref);
+      ref.destroy();
+      activeClass.toggle(true);
+      expect(element.className).toBe('g1-primary g1-b');
+    });
+
+    it('should leave elements of an environment without the merge function to the renderer', () => {
+      @Component({template: ''})
+      class Merged {
+        renderer = inject(Renderer2);
+      }
+      @Component({template: `<div class="g1-a" [class.g2-b]="true"></div>`})
+      class Unmerged {}
+      const merged = createWithMerge(Merged, lastWins);
+      const unmerged = createWithMerge(Unmerged, null);
+      const div = hostOf(unmerged, 'div');
+      merged.instance.renderer.addClass(div, 'g1-c');
+      expect(div.className).toBe('g1-a g2-b g1-c');
+    });
+
     function getActiveClass(ref: ComponentRef<unknown>): ActiveClass {
       const element = (ref.location.nativeElement as HTMLElement).querySelector('[activeclass]')!;
       return getDirectives(element).find((d) => d instanceof ActiveClass) as ActiveClass;
@@ -576,6 +792,19 @@ describe('class merge', () => {
       const ref = createWithMerge(AllSources, throwing);
       expect(errors.length).toBeGreaterThan(0);
       expect((errors[0] as Error).message).toBe('merge failed');
+      expect(sorted(hostOf(ref, 'x-cmp').className)).toBe(sorted(expectedClasses(identity)));
+    });
+
+    it('should report a merge function that does not return a string', () => {
+      const errors: unknown[] = [];
+      TestBed.configureTestingModule({
+        rethrowApplicationErrors: false,
+        providers: [
+          {provide: ErrorHandler, useValue: {handleError: (error: unknown) => errors.push(error)}},
+        ],
+      });
+      const ref = createWithMerge(AllSources, (() => undefined) as unknown as typeof identity);
+      expect((errors[0] as Error).message).toContain('NG0960');
       expect(sorted(hostOf(ref, 'x-cmp').className)).toBe(sorted(expectedClasses(identity)));
     });
 

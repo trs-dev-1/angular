@@ -150,6 +150,9 @@ export const enum RuntimeErrorCode {
   LOOP_TRACK_DUPLICATE_KEYS = -955,
   LOOP_TRACK_RECREATE = -956,
 
+  // Class merge errors
+  INVALID_CLASS_MERGE_RESULT = 960,
+
   // Runtime dependency tracker errors
   RUNTIME_DEPS_INVALID_IMPORTED_TYPE = 980,
   RUNTIME_DEPS_ORPHAN_COMPONENT = 981,

@@ -194,6 +194,36 @@ If an element has multiple bindings for the same CSS class, Angular resolves col
 
 NOTE: Class bindings do not support space-separated class names in a single key. They also don't support mutations on objects as the reference of the binding remains the same. If you need one or the other, use the [ngClass](/api/common/NgClass) directive.
 
+### Merging conflicting CSS classes
+
+With utility CSS frameworks, two different classes can conflict, for example `px-4` from a component's host and `px-2` from the template that uses it. Angular applies both, and which one wins depends on the stylesheet rather than on where the classes come from.
+
+You can resolve such conflicts by providing a function that merges the classes of an element with `provideClassMerge`:
+
+```ts
+import {provideClassMerge} from '@angular/core';
+import {twMerge} from 'tailwind-merge';
+
+bootstrapApplication(App, {
+  providers: [provideClassMerge((classes) => twMerge(classes))],
+});
+```
+
+Angular passes the function all classes of an element, ordered by precedence from the lowest to the highest: the host classes of host directives, of the component, and of the other directives, then the classes in the template, and finally classes added with `Renderer2.addClass`. Within each of these, static classes come first, then `[class]`, then `[class.name]` bindings. Angular writes the merged result to the element at once.
+
+```angular-ts
+@Component({
+  selector: 'app-button',
+  host: {class: 'px-4 py-2'},
+  ...
+})
+export class Button {}
+```
+
+With the merge function above, `<app-button class="px-2" />` renders `<app-button class="py-2 px-2">`.
+
+The merge function must be pure and deterministic. Provide the same function on the server and in the browser so that hydration finds the same classes.
+
 ### CSS style properties
 
 You can also bind to CSS style properties directly on an element.
