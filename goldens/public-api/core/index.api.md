@@ -227,6 +227,9 @@ export abstract class ChangeDetectorRef {
 }
 
 // @public
+export type ClassMergeFn = (classes: string[]) => string;
+
+// @public
 export interface ClassProvider extends ClassSansProvider {
     multi?: boolean;
     provide: any;
@@ -1488,6 +1491,9 @@ export function provideCheckNoChangesConfig(options: {
     interval?: number;
     exhaustive: true;
 }): EnvironmentProviders;
+
+// @public
+export function provideClassMerge(merge: ClassMergeFn): EnvironmentProviders;
 
 // @public
 export function provideEnvironmentInitializer(initializerFn: () => void): EnvironmentProviders;

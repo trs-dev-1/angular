@@ -12,6 +12,7 @@ import {escapeCommentText} from '../util/dom';
 import {assertDefined, assertString} from '../util/assert';
 import {setUpAttributes} from './util/attrs_utils';
 import {TNode} from './interfaces/node';
+import {ENVIRONMENT, LView} from './interfaces/view';
 
 export function createTextNode(renderer: Renderer, value: string): RText {
   return renderer.createText(value);
@@ -138,14 +139,22 @@ function writeDirectClass(renderer: Renderer, element: RElement, newValue: strin
 }
 
 /** Sets up the static DOM attributes on an `RNode`. */
-export function setupStaticAttributes(renderer: Renderer, element: RElement, tNode: TNode) {
+export function setupStaticAttributes(
+  renderer: Renderer,
+  element: RElement,
+  tNode: TNode,
+  lView?: LView,
+) {
   const {mergedAttrs, classes, styles} = tNode;
+  const classMerge = lView?.[ENVIRONMENT].classMerge;
 
   if (mergedAttrs !== null) {
     setUpAttributes(renderer, element, mergedAttrs);
   }
 
-  if (classes !== null) {
+  if (classMerge) {
+    classMerge.writeStaticClasses(lView!, tNode, renderer, element);
+  } else if (classes !== null) {
     writeDirectClass(renderer, element, classes);
   }
 

@@ -7,7 +7,7 @@
  */
 
 import {isLView} from '../render3/interfaces/type_checks';
-import {RENDERER} from '../render3/interfaces/view';
+import {ENVIRONMENT, RENDERER} from '../render3/interfaces/view';
 import {getCurrentTNode, getLView} from '../render3/state';
 import {getComponentLViewByIndex} from '../render3/util/view_utils';
 
@@ -255,7 +255,10 @@ export function injectRenderer2(): Renderer2 {
   const lView = getLView();
   const tNode = getCurrentTNode()!;
   const nodeAtIndex = getComponentLViewByIndex(tNode.index, lView);
-  return (isLView(nodeAtIndex) ? nodeAtIndex : lView)[RENDERER] as Renderer2;
+  const renderer = (isLView(nodeAtIndex) ? nodeAtIndex : lView)[RENDERER] as Renderer2;
+  // With `provideClassMerge`, classes added through the renderer take part in the merge.
+  const classMerge = lView[ENVIRONMENT].classMerge;
+  return classMerge ? classMerge.wrapRenderer(renderer) : renderer;
 }
 
 /**

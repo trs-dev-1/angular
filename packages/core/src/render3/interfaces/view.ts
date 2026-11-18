@@ -10,6 +10,7 @@ import {AnimationLViewData} from '../../animation/interfaces';
 import type {TracingService, TracingSnapshot} from '../../application/tracing';
 import type {ChangeDetectionScheduler} from '../../change_detection/scheduling/zoneless_scheduling';
 import {TDeferBlockDetails} from '../../defer/interfaces';
+import type {ClassMergeStrategy} from '../styling/class_merge';
 import type {Injector} from '../../di/injector';
 import {ProviderToken} from '../../di/provider_token';
 import {DehydratedView} from '../../hydration/interfaces';
@@ -396,6 +397,9 @@ export interface LViewEnvironment {
    * (always disabled in prod mode).
    */
   ngReflect: boolean;
+
+  /** Merges element classes before they are written, see `provideClassMerge`. */
+  classMerge?: ClassMergeStrategy | null;
 }
 
 /** Flags associated with an LView (saved in LView[FLAGS]) */

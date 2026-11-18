@@ -28,6 +28,7 @@
       "CHILD_HEAD",
       "CHILD_TAIL",
       "CIRCULAR",
+      "CLASS_MERGE",
       "CLEANUP",
       "COMMENT_DELIMITER",
       "COMMENT_DELIMITER_ESCAPED",

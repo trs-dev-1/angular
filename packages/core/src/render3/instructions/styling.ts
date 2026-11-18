@@ -32,7 +32,7 @@ import {
   TStylingKey,
   TStylingRange,
 } from '../interfaces/styling';
-import {LView, RENDERER, TData, TView} from '../interfaces/view';
+import {ENVIRONMENT, LView, RENDERER, TData, TView} from '../interfaces/view';
 import {applyStyling} from '../node_manipulation';
 import {
   getCurrentDirectiveDef,
@@ -775,6 +775,15 @@ function updateStylingMap(
   isClassBased: boolean,
   bindingIndex: number,
 ) {
+  const classMerge = isClassBased ? lView[ENVIRONMENT].classMerge : null;
+  if (classMerge) {
+    // Merging rewrites all classes of the element, so do it once per binding rather than per key.
+    if (tNode.type & TNodeType.AnyRNode) {
+      const rNode = getNativeByIndex(getSelectedIndex(), lView) as RElement;
+      classMerge.writeMergedClasses(tView, tNode, lView, renderer, rNode);
+    }
+    return;
+  }
   if ((oldKeyValueArray as KeyValueArray<any> | NO_CHANGE) === NO_CHANGE) {
     // On first execution the oldKeyValueArray is NO_CHANGE => treat it as empty KeyValueArray.
     oldKeyValueArray = EMPTY_ARRAY as any;
@@ -857,6 +866,12 @@ function updateStyling(
     return;
   }
   const tData = tView.data;
+  const classMerge = isClassBased ? lView[ENVIRONMENT].classMerge : null;
+  if (classMerge) {
+    const rNode = getNativeByIndex(getSelectedIndex(), lView) as RElement;
+    classMerge.writeMergedClasses(tView, tNode, lView, renderer, rNode);
+    return;
+  }
   const tRange = tData[bindingIndex + 1] as TStylingRange;
   const higherPriorityValue = getTStylingRangeNextDuplicate(tRange)
     ? findStylingValue(tData, tNode, lView, prop, getTStylingRangeNext(tRange), isClassBased)

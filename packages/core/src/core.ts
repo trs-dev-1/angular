@@ -126,6 +126,7 @@ export {booleanAttribute, numberAttribute} from './util/coercion';
 export {REQUEST, REQUEST_CONTEXT, RESPONSE_INIT, ResponseInit} from './application/platform_tokens';
 export {DOCUMENT} from './document';
 export {provideNgReflectAttributes} from './ng_reflect';
+export {provideClassMerge, ClassMergeFn} from './class_merge';
 export {
   AnimationCallbackEvent,
   AnimationFunction,

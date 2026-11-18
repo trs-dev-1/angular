@@ -36,6 +36,7 @@
       "CHILD_HEAD",
       "CHILD_TAIL",
       "CIRCULAR",
+      "CLASS_MERGE",
       "CLEANUP",
       "COMPILER_OPTIONS",
       "COMPLETE_NOTIFICATION",
